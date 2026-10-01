@@ -124,6 +124,27 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
     last_error TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS jobs_due ON scheduled_jobs(status, run_at, lease_until);
+CREATE TABLE IF NOT EXISTS resume_receipts (
+    receipt_key TEXT PRIMARY KEY,
+    candidate_id TEXT NOT NULL,
+    referral_id TEXT,
+    materials_digest TEXT NOT NULL,
+    status TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS resume_review_queue (
+    review_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_key TEXT NOT NULL,
+    candidate_id TEXT NOT NULL,
+    existing_digest TEXT NOT NULL,
+    incoming_digest TEXT NOT NULL,
+    status TEXT NOT NULL,
+    detected_at TEXT NOT NULL,
+    resolved_at TEXT,
+    resolution TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS resume_review_pending ON resume_review_queue(status, detected_at);
 """
 
 

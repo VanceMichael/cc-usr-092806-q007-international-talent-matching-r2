@@ -23,12 +23,25 @@ class JobQueue:
             connection.execute("INSERT INTO scheduled_jobs(job_id,job_type,subject_id,run_at,payload_json,status) VALUES(?,?,?,?,?,'waiting')", (job_id, job_type, subject_id, run_at, canonical_json(payload)))
         return job_id
 
-    def claim_due(self, *, seconds: int = 30, limit: int = 20) -> list[dict]:
+    def claim_due(self, *, seconds: int = 30, limit: int = 20, job_types: tuple[str, ...] | None = None) -> list[dict]:
         if seconds < 1 or limit < 1:
             raise ValidationError("租约参数不合法")
         lease_until = (parse_instant(self.clock.now()) + timedelta(seconds=seconds)).isoformat().replace("+00:00", "Z")
+        type_filter = ""
+        params: list[object] = [self.clock.now(), self.clock.now(), self.clock.now()]
+        if job_types:
+            type_filter = "AND job_type IN (%s)" % ",".join("?" for _ in job_types)
+            params.extend(job_types)
+        params.append(limit)
         with self.database.transaction() as connection:
-            rows = connection.execute("SELECT * FROM scheduled_jobs WHERE run_at<=? AND status IN ('waiting','retry') AND (lease_until IS NULL OR lease_until<?) ORDER BY run_at,job_id LIMIT ?", (self.clock.now(), self.clock.now(), limit)).fetchall()
+            rows = connection.execute(
+                "SELECT * FROM scheduled_jobs WHERE run_at<=? AND "
+                "((status IN ('waiting','retry') AND (lease_until IS NULL OR lease_until<?)) "
+                "OR (status='running' AND lease_until<?)) "
+                + type_filter +
+                " ORDER BY run_at,job_id LIMIT ?",
+                params,
+            ).fetchall()
             result = []
             for row in rows:
                 changed = connection.execute("UPDATE scheduled_jobs SET status='running',lease_until=?,attempt=attempt+1 WHERE job_id=? AND (lease_until IS NULL OR lease_until<?)", (lease_until, row["job_id"], self.clock.now())).rowcount
