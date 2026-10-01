@@ -23,15 +23,26 @@ class JobQueue:
             connection.execute("INSERT INTO scheduled_jobs(job_id,job_type,subject_id,run_at,payload_json,status) VALUES(?,?,?,?,?,'waiting')", (job_id, job_type, subject_id, run_at, canonical_json(payload)))
         return job_id
 
+    def schedule_known(self, *, job_id: str, job_type: str, subject_id: str, run_at: str, payload: dict) -> str:
+        """用确定性标识登记任务；重放（含崩溃恢复后重试）不会产生重复任务。"""
+        run_at = canonical_instant(run_at)
+        with self.database.transaction() as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO scheduled_jobs(job_id,job_type,subject_id,run_at,payload_json,status) VALUES(?,?,?,?,?,'waiting')",
+                (job_id, job_type, subject_id, run_at, canonical_json(payload)),
+            )
+        return job_id
+
     def claim_due(self, *, seconds: int = 30, limit: int = 20) -> list[dict]:
         if seconds < 1 or limit < 1:
             raise ValidationError("租约参数不合法")
         lease_until = (parse_instant(self.clock.now()) + timedelta(seconds=seconds)).isoformat().replace("+00:00", "Z")
         with self.database.transaction() as connection:
-            rows = connection.execute("SELECT * FROM scheduled_jobs WHERE run_at<=? AND status IN ('waiting','retry') AND (lease_until IS NULL OR lease_until<?) ORDER BY run_at,job_id LIMIT ?", (self.clock.now(), self.clock.now(), limit)).fetchall()
+            now = self.clock.now()
+            rows = connection.execute("SELECT * FROM scheduled_jobs WHERE run_at<=? AND status IN ('waiting','retry','running') AND (lease_until IS NULL OR lease_until<?) ORDER BY run_at,job_id LIMIT ?", (now, now, limit)).fetchall()
             result = []
             for row in rows:
-                changed = connection.execute("UPDATE scheduled_jobs SET status='running',lease_until=?,attempt=attempt+1 WHERE job_id=? AND (lease_until IS NULL OR lease_until<?)", (lease_until, row["job_id"], self.clock.now())).rowcount
+                changed = connection.execute("UPDATE scheduled_jobs SET status='running',lease_until=?,attempt=attempt+1 WHERE job_id=? AND (lease_until IS NULL OR lease_until<?)", (lease_until, row["job_id"], now)).rowcount
                 if changed:
                     item = dict(row); item["lease_until"] = lease_until; result.append(item)
             return result

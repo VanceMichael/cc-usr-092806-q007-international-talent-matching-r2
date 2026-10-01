@@ -124,6 +124,28 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
     last_error TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS jobs_due ON scheduled_jobs(status, run_at, lease_until);
+CREATE TABLE IF NOT EXISTS recruitment_receipts (
+    receipt_id TEXT PRIMARY KEY,
+    person_key TEXT NOT NULL,
+    job_id TEXT NOT NULL,
+    digest_value TEXT NOT NULL,
+    application_id TEXT,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS recruitment_receipts_lookup ON recruitment_receipts(person_key, job_id);
+CREATE TABLE IF NOT EXISTS recruitment_todos (
+    todo_id TEXT PRIMARY KEY,
+    application_id TEXT NOT NULL,
+    todo_kind TEXT NOT NULL,
+    due_at TEXT NOT NULL,
+    status TEXT NOT NULL,
+    detail_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS recruitment_todos_due ON recruitment_todos(status, due_at);
 """
 
 
